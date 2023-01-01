@@ -2,13 +2,15 @@
 рабочая версия v1.1
 '''
 
-import os, time
-from bs4 import BeautifulSoup
-import requests, logging
-import os
+import os, time, logging
 from dotenv import load_dotenv
-load_dotenv()
+from msgFilter import message_important_checker
+from get_event import parsing_event
+from get_next_item import get_item
+from tg_bot import send_message
 
+load_dotenv()
+# подключение переменных окружения
 TG_BOT_KEY=os.getenv('TG_BOT_KEY')
 CHAT_ID = os.getenv('CHAT_ID')
 SD_LOGIN = os.getenv('SD_LOGIN')
@@ -17,90 +19,18 @@ SD_ADDRESS = os.getenv('SD_ADDRESS')
 
 logging.basicConfig(filename='events_tracker.log', format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%d/%m/%Y %H:%M:%S', level=logging.INFO)
 
-def message_important_checker(msg):
-    if "Информация. Сервисное обслуживание БД" in msg['Название'][:220]:
-        print(msg)
-        return False
-    elif "Заявка не создана. Письмо распознано как служебное." in msg['Описание'][:220]:
-        print(msg)
-        return False
-    elif "Заявка не создана. Письмо распознано как автоответ." in msg['Описание'][:220]:
-        print(msg)
-        return False
-    elif "Пользователь Arsentiy Cherkasov удалил записи в таблицах: Task" in msg['Название'][:220]:
-        print(msg)
-        return False
-    elif "Пользователь Черкасов Арсентий Владимирович удалил записи в таблицах: Task" in msg['Название'][:220]:
-        print(msg)
-        return False   
-    elif "Пользователь Сергей Калыгин удалил записи в таблицах: Task" in msg['Название'][:220]:
-        print(msg)
-        return False
-    elif "Пользователь AR удалил записи в таблицах: Task" in msg['Название'][:220]:
-        print(msg)
-        return False
-    elif "Пользователь Администратор удалил записи в таблицах: Task" in msg['Название'][:220]:
-        print(msg)
-        return False   
-        return True
-
-def send_message(msg):
-    '''
-    бот отправляет событие в группу в телеграме
-    '''
-    url = f"https://api.telegram.org/bot{TG_BOT_KEY}/sendmessage"
-    params = {
-        "chat_id": CHAT_ID, # mlsup_group
-        "text":msg
-    }
-    return requests.get(url,params=params).text
-
-def get_item(event_id):
-    '''
-    поключаемся к странице сообщения, и если такая страница есть - возвращаем ее.
-    '''
-    with requests.Session() as session:
-        payload = {'login' : SD_LOGIN, 'password' : SD_PASSWORD}
-        headers={"User-Agent" : "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.103 Safari/537.36"}
-        rs = session.post(f"{SD_ADDRESS}/registertask.ivp", headers=headers, data=payload)
-        r = session.get(f"{SD_ADDRESS}/eventlog.ivp/view/{event_id}", cookies=rs.cookies)
-
-        if r.status_code == 200:
-            text = r.text
-            return text
-        else:
-            return None
-
-def get_event(text):
-    event_info = {}
-    soup = BeautifulSoup(text, "html.parser")
-    event_body = soup.find('div', {'class':'formbody'})
-    fields = event_body.find_all('div', {'class':'field'})
-    for field in fields:
-        event_field = field.text.split('\n')[-2].strip()
-        print(event_field)
-        if field.find('label',{"for":"name"}):
-            key = field.find('label',{"for":"name"}).text.strip()
-        if field.find('label',{"for":"Date"}):
-            key = field.find('label',{"for":"Date"}).text.strip()
-        if field.find('label',{"for":"Type"}):
-            key = field.find('label',{"for":"Type"}).text.strip()
-        if field.find('label',{"for":"description"}):
-            key = field.find('label',{"for":"description"}).text.strip()
-        print(key)
-        event_field = field.text.split('\n')[-2].strip()
-        event_info[key] = event_field
-    return event_info #f"{event_info['Дата']} {event_info['Тип']}\n{event_info['Название']}\n{event_info['Описание'][:220]}"
-
-
 def mainfunc():
+    '''модуль логики'''
     logging.info("bot restarted")
-    send_message("I'm Online")
-
+    # отправка сообщения в группу, если бот запущен или перезагружен
+    send_message("I'm Online", TG_BOT_KEY, CHAT_ID)
+    # начальное значение таймера, при наполнении которого бот пишет, что он жив
     timer = 0
-    event_id = 58082
-
+    # если в отдельном файле (обычно при первом запуске) не указан id последнего существующего сообщения, то используется это
+    event_id = 58083
+    # файл с номером эвента, с которого начинать прогон.
     file_with_id="event_id"
+    # если файла с номером нет (или файл пустой), создать его и положить в него значение evend_id
     if not os.path.exists(file_with_id):
         with open("event_id",'w') as f:
             f.write(str(event_id))
@@ -109,37 +39,41 @@ def mainfunc():
         with open("event_id",'w') as f:
             f.write(str(event_id))
 
+    # бесконечный цикл поиска следующего сообщения, его парсинкга и отправки в группу
     while True:
+        # читаем номер последнего существуюшего на момент анализа, сообщения
         with open("event_id",'r') as o:
             event_id = int(o.readline())
+        # берем id эвента, следующий за последним обработанным
         event_id = event_id + 1
-        res = get_item(event_id)
+        # проверяем существует ли и если да, вытаскиваем содержимое
+        res = get_item(event_id, SD_LOGIN, SD_PASSWORD, SD_ADDRESS)
+        # если следующего сообщения нет, то делаем паузу и проверяем еще раз до тех пор пока таймер не накопит пороговое значение
+        # после чего в группу отправляется сообщение что бот жив, но нет новых сообщений
         if res is None:
             msg = f"{event_id} is not found"
             time.sleep(600) #600
             timer = timer + 1
             if timer == 48:
-                send_message("I'm work, but no new messages.")
+                send_message("I'm work, but no new messages.", TG_BOT_KEY, CHAT_ID)
                 logging.info(f"timer={timer} event_id={event_id}")
                 timer = 0
             continue
+        # если сообщение есть, парсим с его страницы данные
         else:
             timer = 0
-            message = get_event(res)
-
+            message = parsing_event(res)
             ##проверка содержимого сообщения
-            ## если важное - отправляем
+            ## если важное - отправляем, если не важное - пропускаем
             if message_important_checker(message):
                 message = f"{message['Дата']} {message['Тип']}\n{message['Название']}\n{message['Описание'][:220]}"
-                send_message(message)
-            
+                send_message(message, TG_BOT_KEY, CHAT_ID)
+            # записываем в файл id обработанного сообщения
             with open("event_id",'w') as o:
                 o.write(str(event_id))
             logging.info(f"timer={timer} event_id={event_id}")
             time.sleep(1) # убрать
             continue
-
-
 
 if __name__ == "__main__":
     mainfunc()
