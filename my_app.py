@@ -4,7 +4,7 @@
 '''
 #TODO придумать как фиксировать последнее выводимое событие для перезапуска
 #TODO придумать как проверять что события в системе вообще есть
-#TODO придумать обработку событий (удалять информационные и присылать действительно важные)
+
 
 import os, time
 from bs4 import BeautifulSoup
@@ -22,7 +22,7 @@ SD_ADDRESS = os.getenv('SD_ADDRESS')
 logging.basicConfig(filename='events_tracker.log', format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%d/%m/%Y %H:%M:%S', level=logging.INFO)
 
 def message_important_checker(msg):
-    if "Информация. Сервисное обслуживание БД" in msg['Описание'][:220]:
+    if "Информация. Сервисное обслуживание БД" in msg['Название'][:220]:
         print(msg)
         return False
     elif "Заявка не создана. Письмо распознано как служебное." in msg['Описание'][:220]:
@@ -31,13 +31,22 @@ def message_important_checker(msg):
     elif "Заявка не создана. Письмо распознано как автоответ." in msg['Описание'][:220]:
         print(msg)
         return False
-    elif "Пользователь Arsentiy Cherkasov удалил записи в таблицах: Task" in msg['Описание'][:220]:
+    elif "Пользователь Arsentiy Cherkasov удалил записи в таблицах: Task" in msg['Название'][:220]:
         print(msg)
         return False
-    elif "Пользователь Калыгин Сергей удалил записи в таблицах: Task" in msg['Описание'][:220]:
+    elif "Пользователь Черкасов Арсентий Владимирович удалил записи в таблицах: Task" in msg['Название'][:220]:
+        print(msg)
+        return False   
+    elif "Пользователь Сергей Калыгин удалил записи в таблицах: Task" in msg['Название'][:220]:
         print(msg)
         return False
-    return True
+    elif "Пользователь AR удалил записи в таблицах: Task" in msg['Название'][:220]:
+        print(msg)
+        return False
+    elif "Пользователь Администратор удалил записи в таблицах: Task" in msg['Название'][:220]:
+        print(msg)
+        return False   
+        return True
 
 def send_message(msg):
     '''
