@@ -1,0 +1,5 @@
+.env
+env/
+temp_dir/
+event_id
+*.log

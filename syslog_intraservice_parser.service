@@ -1,0 +1,25 @@
+#install to /etc/systemd/system
+#sudo systemctl enable <name.service>
+#sudo systemctl start <name.service>
+
+[Unit]
+Description=Send syslog's message from tc.merlion.ru to chat via telegram bot
+#After=network.target
+#Requires=network.service
+
+[Service]
+Type=simple
+PIDFile=/var/lib/event_checker.pid
+WorkingDirectory=/var/www/events_checker
+User=root
+Group=root
+Environment=STAGE_ENV=production
+OOMScoreAdjust=-100
+ExecStart=/var/www/events_checker/env/bin/python3 my_app.py --start
+ExecStop=/var/www/events_checker/env/bin/python3 my_app.py --stop
+ExecReload=/var/www/events_checker/env/bin/python3 my_app.py --restart
+TimeoutSec=3
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
